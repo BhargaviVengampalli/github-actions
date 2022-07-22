@@ -1,0 +1,76 @@
+ame: CICD Workflow MSTEAMS Notification
+# Only trigger, when the build workflow succeeded
+on:
+  workflow_run:
+    workflows: ["CICD Process", "Production Promotion"]
+    branches:
+    - develop
+    - master    
+    types:
+      - completed
+
+jobs:
+
+  msteams_context:
+    runs-on: ubuntu-latest
+    outputs:      
+      MSTEAMS_MESSAGE_SUCCESS: ${{join(steps.*.outputs.MSTEAMS_MESSAGE_SUCCESS,'')}}
+      MSTEAMS_MESSAGE_FAILURE: ${{join(steps.*.outputs.MSTEAMS_MESSAGE_FAILURE,'')}}      
+
+    steps:
+    - name: output result
+      run: echo "result:" ${{ github.event.workflow_run.conclusion }}
+           echo "workflow name:" ${{ github.event.workflow_run.name }}
+   
+    - name: Get Build & Deployment Context
+      if: ${{ github.event.workflow_run.name == 'CICD Process' }}
+      id: get-build-deployment-context
+      run: |          
+          echo "::set-output name=MSTEAMS_MESSAGE_SUCCESS::Build & deployment is SUCCESSFUL"
+          echo "::set-output name=MSTEAMS_MESSAGE_FAILURE::Build & deployment is FAILED, please check the Github Action error logs"
+          
+          
+    - name: Get Prod Promotion Context
+      if: ${{ github.event.workflow_run.name == 'Production Promotion' }}
+      id: get-prod-promotion-context
+      run: |          
+          echo "::set-output name=MSTEAMS_MESSAGE_SUCCESS::Production promotion is SUCCESSFUL"
+          echo "::set-output name=MSTEAMS_MESSAGE_FAILURE::Production promotion is FAILED, please check the Github Action error logs"
+                    
+  on-success:
+    needs: [msteams_context]
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: set test webhook
+        if: ${{ github.event.workflow_run.name == 'CICD Process' }}
+        run: echo "MSTEAMS_WEBHOOK=${{ secrets.MSTEAMS_TEST_WEBHOOK }}" >> $GITHUB_ENV  
+      - name: set prod webhook  
+        if: ${{ github.event.workflow_run.name == 'Production Promotion' }}
+        run: echo "MSTEAMS_WEBHOOK=${{ secrets.MSTEAMS_PROD_WEBHOOK }}" >> $GITHUB_ENV
+      - uses: actions/checkout@v2
+      - name: msteams Notification        
+        uses: BhargaviVengampalli/githubactions_library/.github/workflow/msteams-notification/action.yml@master
+        env:
+          MSTEAMS_MESSAGE: ${{ needs.msteams_context.outputs.MSTEAMS_MESSAGE_SUCCESS }}
+          MSTEAMS_WEBHOOK: ${{ env.MSTEAMS_WEBHOOK }}
+          THEME_COLOR: '#00ff66'  # light green color
+
+  on-failure:
+    needs: [msteams_context]
+    runs-on: ubuntu-latest   
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    steps:
+      - name: set test webhook
+        if: ${{ github.event.workflow_run.name == 'CICD Process' }}
+        run: echo "MSTEAMS_WEBHOOK=${{ secrets.MSTEAMS_TEST_WEBHOOK }}" >> $GITHUB_ENV  
+      - name: set prod webhook  
+        if: ${{ github.event.workflow_run.name == 'Production Promotion' }}
+        run: echo "MSTEAMS_WEBHOOK=${{ secrets.MSTEAMS_PROD_WEBHOOK }}" >> $GITHUB_ENV      
+      - uses: actions/checkout@v2
+      - name: msteams Notification
+        uses: BhargaviVengampalli/githubactions_library/.github/workflow/msteams-notification/action.yml@master
+        env:
+          MSTEAMS_MESSAGE: ${{ needs.msteams_context.outputs.MSTEAMS_MESSAGE_FAILURE }}
+          MSTEAMS_WEBHOOK: ${{ env.MSTEAMS_WEBHOOK }}
+          THEME_COLOR: '#ff4d40'   # light red color
